@@ -2,18 +2,18 @@ package app
 
 import (
 	"context"
-	_ "go-gin/internal/app/bll"
-	_ "go-gin/internal/app/schema"
-	"go-gin/pkg/auth"
-	"go-gin/pkg/redis"
 	"os"
+	"time"
 
-	"github.com/LyricTian/fuh"
-	"github.com/casbin/casbin"
 	"go-gin/internal/app/bll/impl"
 	"go-gin/internal/app/config"
+	"go-gin/pkg/auth"
 	"go-gin/pkg/logger"
 	"go-gin/pkg/minio"
+	"go-gin/pkg/redis"
+
+	"github.com/casbin/casbin"
+	minioclient "github.com/minio/minio-go/v7"
 	"go.uber.org/dig"
 )
 
@@ -72,6 +72,9 @@ func handleError(err error) {
 // InitRedis 初始化redis
 func InitRedis(ctx context.Context) func() {
 	cfg := config.GetGlobalConfig().Redis
+	if !cfg.Enable {
+		return nil
+	}
 	redis.Init(ctx, cfg.Addr, cfg.Password, cfg.DB)
 
 	return func() {
@@ -108,14 +111,11 @@ func Init(ctx context.Context, opts ...Option) func() {
 
 	err = InitMonitor()
 	if err != nil {
-		logger.Errorf(ctx, err.Error())
+		logger.Errorf(ctx, "%v", err)
 	}
 
 	// 创建依赖注入容器
 	container, containerCall := BuildContainer()
-
-	// 初始化文件服务
-	InitMinio()
 
 	InitCaptcha()
 
@@ -139,16 +139,15 @@ func Init(ctx context.Context, opts ...Option) func() {
 }
 
 // InitMinio 初始化minio
-func InitMinio() {
+func InitMinio() (*minioclient.Client, error) {
 	cfg := config.GetGlobalConfig()
-	cli := minio.Init(cfg.Minio.Addr, cfg.Minio.AssessKey, cfg.Minio.SecretKey)
-
-	// 设置文件上传参数
-	fuh.SetConfig(&fuh.Config{
-		BasePath:  cfg.Upload.Prefix,
-		SizeLimit: cfg.Upload.SizeLimit * 1024 * 1024,
-	})
-	fuh.SetStore(cli)
+	return minio.NewClient(
+		cfg.Minio.Addr,
+		cfg.Minio.AssessKey,
+		cfg.Minio.SecretKey,
+		cfg.Minio.UseSSL,
+		time.Duration(cfg.Minio.RequestTimeoutMS)*time.Millisecond,
+	)
 }
 
 // NewEnforcer 创建casbin校验
@@ -163,14 +162,16 @@ func BuildContainer() (*dig.Container, func()) {
 	container := dig.New()
 
 	// 注入casbin
-	container.Provide(NewEnforcer)
+	handleError(container.Provide(NewEnforcer))
+	handleError(container.Provide(config.GetGlobalConfig))
+	handleError(container.Provide(InitMinio))
 
-	// 注入认证模块
+	// 注入模板认证模块
 	auther, err := InitAuth()
 	handleError(err)
-	container.Provide(func() auth.Auther {
+	handleError(container.Provide(func() auth.Auther {
 		return auther
-	})
+	}))
 
 	// 注入存储模块
 	storeCall, err := InitStore(container)

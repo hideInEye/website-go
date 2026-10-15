@@ -17,7 +17,7 @@ type Trans struct {
 	TransModel model.ITrans
 }
 
-//  执行事务
+// 执行事务
 func (a *Trans) Exec(ctx context.Context, fn func(context.Context) error) error {
 	return ExecTrans(ctx, a.TransModel, fn)
 }

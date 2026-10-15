@@ -119,7 +119,7 @@ func GetUserID(ctx context.Context) string {
 	return userID
 }
 
-//查询数字结构体
+// 查询数字结构体
 type Result struct {
 	Num  int     `gorm:"num"`
 	Fnum float64 `gorm:"fnum"`

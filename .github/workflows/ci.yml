@@ -1,0 +1,27 @@
+name: Go API checks
+
+on:
+  pull_request:
+  push:
+    branches: [main, master, codex/blog-api]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Download dependencies
+        run: go mod download
+      - name: Check template application formatting
+        run: test -z "$(gofmt -l internal/app services pkg/minio)"
+      - name: Unit checks (no production services)
+        run: go test -tags nomsgpack ./internal/app/... ./pkg/minio/...
+      - name: Build server
+        run: CGO_ENABLED=0 go build -tags nomsgpack -o /tmp/blog-api ./services

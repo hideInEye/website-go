@@ -22,11 +22,14 @@ enable_casbin = false
 # http配置
 [http]
 # http监听地址
-host = "localhost"
+host = "0.0.0.0"
 # http监听端口
-port = 10088
+port = 4000
 # http优雅关闭等待超时时长(单位秒)
 shutdown_timeout = 30
+
+# 可信反向代理地址；生产环境按实际 Docker 网段配置。
+trusted_proxies = ["127.0.0.1/32", "::1/128"]
 
 # 服务监控(GOPS:https://github.com/google/gops)
 [monitor]
@@ -58,22 +61,27 @@ hook_max_buffer = 512
 
 # minio存储
 [minio]
-addr = "39.99.234.158:9000"
-assess_key = "15064622247"
-secret_key = "3f17e85d73feb1e33b408e5e9ab7cffb"
+addr = "127.0.0.1:9000"
+assess_key = ""
+secret_key = ""
+
+# 沿用模板 assess_key 的拼写，填写已有 MinIO 账号。
+bucket = "sunset-media"
+use_ssl = false
+request_timeout_ms = 5000
 
 # gorm配置
 [gorm]
 # 是否开启调试模式
-debug = true
+debug = false
 # 数据库类型(目前支持的数据库类型：mysql/sqlite3/postgres)
 db_type = "mysql"
 # 设置连接可以重用的最长时间(单位：秒)
-max_lifetime = 7200
+max_lifetime = 180
 # 设置数据库的最大打开连接数
-max_open_conns = 150
+max_open_conns = 8
 # 设置空闲连接池中的最大连接数
-max_idle_conns = 50
+max_idle_conns = 2
 # 数据库表名前缀
 table_prefix = ""
 # 是否开启自动映射数据库表结构
@@ -84,15 +92,15 @@ auto_migrate = false
 # 连接地址
 host = "127.0.0.1"
 # 连接端口
-port= 3306
+port = 3306
 # 用户名
-user = "root"
+user = ""
 # 密码
-password = "zhb19970504"
+password = ""
 # 数据库
-db_name = "interview"
+db_name = "sunset_blog"
 # 连接参数
-parameters = "charset=utf8mb4&parseTime=True&loc=Local&allowNativePasswords=true"
+parameters = "charset=utf8mb4&parseTime=True&loc=UTC&timeout=5s&readTimeout=15s&writeTimeout=15s"
 
 # sqlite数据库配置
 [sqlite3]
@@ -116,6 +124,8 @@ redis_prefix = "captcha_"
 
 # redis配置
 [redis]
+# 当前站点业务不依赖 Redis；保留模板插件，默认不启动。
+enable = false
 # 地址
 addr = "127.0.0.1:6379"
 # 密码
@@ -149,7 +159,11 @@ redis_db = 10
 # 存储到redis数据库中的键名前缀
 redis_prefix = "auth_"
 # 三方Key
-third_key = "A690DA8618B76BAE3B4EDCFFD715C2E6A690DA8618B76BAE3B4EDCFFD715C2E6"
+third_key = ""
+
+# 刷新令牌天数与站点 Cookie 设置。
+refresh_ttl_days = 30
+cookie_secure = false
 
 # 跨域请求
 [cors]
@@ -168,7 +182,7 @@ max_age = 7200
 
 # 高德地图
 [amap]
-#key = "631d996a7a3c4c603ac7e04738f8fd6e"
+#key = ""
 
 [excel_export]
 #导出文件
@@ -187,8 +201,25 @@ buckets = ["assets"]
 # 登录用户名
 user_name = "root"
 # 登录密码
-password = "Abc@123!"
+password = ""
 # 显示的真实姓名
 real_name = "超级管理员"
 
+# 站点及媒体地址
+[site]
+origin = "http://localhost:3000"
+allow_insecure_http = false
 
+[media]
+# 留空时生成 site.origin/media 代理地址，浏览器不访问 MinIO 内部主机名。
+public_url = ""
+upload_public_url = ""
+
+[mail]
+# log 仅把验证/重置链接写入服务日志；smtp 才实际发送邮件。
+mode = "log"
+host = "localhost"
+port = 1025
+user = ""
+password = ""
+from = "日落的足迹 <noreply@example.com>"

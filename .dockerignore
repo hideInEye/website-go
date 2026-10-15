@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+config/
+backups/
+data/
+release/
+vendor/
+bin/
+*.log
+*.out
+.idea/

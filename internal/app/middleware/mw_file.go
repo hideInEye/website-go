@@ -1,12 +1,12 @@
 package middleware
 
 import (
+	"fmt"
 	"go-gin/internal/app/errors"
 	"go-gin/internal/app/ginplus"
 	"go-gin/pkg/logger"
 	"go-gin/pkg/minio"
 	"go-gin/until"
-	"fmt"
 	"io"
 	"net/url"
 	"path/filepath"
@@ -27,14 +27,14 @@ func FileMiddleware(skipper ...SkipperFunc) gin.HandlerFunc {
 		ctx := ginplus.NewContext(c)
 		path, err := url.PathUnescape(c.Request.URL.Path)
 		if err != nil {
-			logger.StartSpan(ctx).WithField("path", c.Request.URL.Path).Warnf(err.Error())
+			logger.StartSpan(ctx).WithField("path", c.Request.URL.Path).Warnf("%v", err)
 			ginplus.ResError(c, errors.ErrBadRequest)
 			return
 		}
 
 		stat, err := minio.GetClient().Stat(path)
 		if err != nil {
-			logger.StartSpan(ctx).WithField("file", path).Warnf(err.Error())
+			logger.StartSpan(ctx).WithField("file", path).Warnf("%v", err)
 			ginplus.ResError(c, errors.ErrNotFound)
 			return
 		}

@@ -1,8 +1,8 @@
 package app
 
 import (
-	"go-gin/internal/app/config"
 	"github.com/google/gops/agent"
+	"go-gin/internal/app/config"
 )
 
 // InitMonitor 初始化服务监控

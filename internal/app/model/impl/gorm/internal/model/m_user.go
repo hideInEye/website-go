@@ -2,80 +2,98 @@ package model
 
 import (
 	"context"
-	"go-gin/internal/app/errors"
+	"time"
+
+	contract "go-gin/internal/app/model"
 	"go-gin/internal/app/model/impl/gorm/internal/entity"
 	"go-gin/internal/app/schema"
 	"go-gin/pkg/gormplus"
+
+	"github.com/jinzhu/gorm"
 )
 
-// NewUser 创建NewUser存储实例
-func NewUser(db *gormplus.DB) *User {
-	return &User{db}
-}
-
-// User 存储db
 type User struct {
 	db *gormplus.DB
 }
 
-func (a *User) getQueryOption(opts ...schema.UserQueryOptions) schema.UserQueryOptions {
-	var opt schema.UserQueryOptions
-	if len(opts) > 0 {
-		opt = opts[0]
-	}
-	return opt
+var _ contract.IUser = (*User)(nil)
+
+func NewUser(db *gormplus.DB) *User {
+	return &User{db: db}
 }
 
-// Query 查询数据
-func (a *User) Query(ctx context.Context, params schema.UserQueryParams, opts ...schema.UserQueryOptions) (*schema.Result, error) {
-	db := entity.GetUserDB(ctx, a.db).DB
-
-	if v := params.UserName; v != "" {
-		db = db.Where("user_name=?", v)
-	}
-	if v := params.LikeUserName; v != "" {
-		db = db.Where("user_name LIKE ?", "%"+v+"%")
-	}
-	if v := params.Status; v > 0 {
-		db = db.Where("status=?", v)
-	}
-	db = db.Order("id DESC")
-
-	opt := a.getQueryOption(opts...)
-	var list entity.Users
-	pr, err := WrapPageQueryNC(db, opt.PageParam, &list)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-
-	qr := &schema.Result{
-		PageResult: pr,
-		Data:       list.ToSchemaUsers(),
-	}
-
-	return qr, nil
+func (a *User) database(ctx context.Context) *gorm.DB {
+	return entity.GetDB(ctx, a.db.DB)
 }
 
-// Get 查询指定数据
-func (a *User) Get(ctx context.Context, recordID string) (*schema.UserInfo, error) {
-	var item entity.User
-	ok, err := a.db.FindOne(entity.GetUserDB(ctx, a.db).Where("record_id=?", recordID), &item)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	} else if !ok {
+func (a *User) FindPublic(ctx context.Context, username string) (*schema.User, error) {
+	var row entity.User
+	err := a.database(ctx).Where("username = ? AND status = ? AND deletedAt IS NULL", username, "ACTIVE").First(&row).Error
+	if gorm.IsRecordNotFoundError(err) {
 		return nil, nil
 	}
-
-	return item.ToSchemaUser(), nil
+	if err != nil {
+		return nil, err
+	}
+	user := schema.User(row)
+	return &user, nil
 }
 
-// Create 创建数据
-func (a *User) Create(ctx context.Context, item schema.UserInfo) error {
-
-	sitem := entity.SchemaUser(item)
-	result := entity.GetUserDB(ctx, a.db).Create(sitem.ToUser())
-	if err := result.Error; err != nil {
-		return errors.WithStack(err)
+func (a *User) UpdateProfile(ctx context.Context, id string, updates map[string]interface{}) (*schema.User, error) {
+	var row entity.User
+	err := ExecTrans(ctx, a.db, func(txctx context.Context) error {
+		db := a.database(txctx)
+		if err := db.Model(&entity.User{}).Where("id = ? AND deletedAt IS NULL", id).Updates(updates).Error; err != nil {
+			return err
+		}
+		return db.Where("id = ? AND deletedAt IS NULL", id).First(&row).Error
+	})
+	if gorm.IsRecordNotFoundError(err) {
+		return nil, nil
 	}
-	return nil
+	if err != nil {
+		return nil, err
+	}
+	user := schema.User(row)
+	return &user, nil
+}
+
+func (a *User) List(ctx context.Context) ([]schema.User, error) {
+	rows := []entity.User{}
+	if err := a.database(ctx).Unscoped().Order("createdAt DESC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	users := make([]schema.User, len(rows))
+	for index, row := range rows {
+		users[index] = schema.User(row)
+	}
+	return users, nil
+}
+
+func (a *User) SetStatus(ctx context.Context, id, status string) (*schema.User, error) {
+	var row entity.User
+	err := ExecTrans(ctx, a.db, func(txctx context.Context) error {
+		db := a.database(txctx)
+		if err := db.Unscoped().Set("gorm:query_option", "FOR UPDATE").Where("id = ?", id).First(&row).Error; err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		if err := db.Unscoped().Model(&entity.User{}).Where("id = ?", id).Updates(map[string]interface{}{
+			"status":    status,
+			"updatedAt": now,
+		}).Error; err != nil {
+			return err
+		}
+		row.Status = status
+		row.UpdatedAt = now
+		return nil
+	})
+	if gorm.IsRecordNotFoundError(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	user := schema.User(row)
+	return &user, nil
 }

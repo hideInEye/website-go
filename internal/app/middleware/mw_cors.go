@@ -3,9 +3,9 @@ package middleware
 import (
 	"time"
 
-	"go-gin/internal/app/config"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"go-gin/internal/app/config"
 )
 
 // CORSMiddleware 跨域请求中间件

@@ -1,11 +1,11 @@
 package middleware
 
 import (
+	"github.com/casbin/casbin"
+	"github.com/gin-gonic/gin"
 	"go-gin/internal/app/config"
 	"go-gin/internal/app/errors"
 	"go-gin/internal/app/ginplus"
-	"github.com/casbin/casbin"
-	"github.com/gin-gonic/gin"
 )
 
 // CasbinMiddleware casbin中间件

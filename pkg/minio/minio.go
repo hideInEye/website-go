@@ -6,12 +6,14 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
-	"io/ioutil"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/minio/minio-go"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 var (
@@ -22,10 +24,30 @@ var (
 // ErrorInvalidName 无效的文件名
 var ErrorInvalidName = errors.New("invalid file name")
 
+// NewClient configures the template's storage plugin without network operations.
+// Both dependency injection and the legacy file adapter use this one factory.
+func NewClient(endpoint, accessKey, secretKey string, secure bool, timeout time.Duration) (*minio.Client, error) {
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = timeout
+	transport.DialContext = (&net.Dialer{
+		Timeout:   timeout,
+		KeepAlive: 30 * time.Second,
+	}).DialContext
+	return minio.New(endpoint, &minio.Options{
+		Creds:     credentials.NewStaticV4(accessKey, secretKey, ""),
+		Secure:    secure,
+		Transport: transport,
+		Region:    "us-east-1",
+	})
+}
+
 // Init 初始化minio客户端
 func Init(addr, accessKey, secretKey string) *Client {
 	once.Do(func() {
-		cli, err := minio.New(addr, accessKey, secretKey, false)
+		cli, err := NewClient(addr, accessKey, secretKey, false, 5*time.Second)
 		if err != nil {
 			panic(err)
 		}
@@ -61,17 +83,17 @@ func (a *Client) Store(ctx context.Context, filename string, data io.Reader, siz
 		return err
 	}
 
-	exists, err := a.cli.BucketExists(bucket)
+	exists, err := a.cli.BucketExists(ctx, bucket)
 	if err != nil {
 		return err
 	} else if !exists {
-		err = a.cli.MakeBucket(bucket, "local")
+		err = a.cli.MakeBucket(ctx, bucket, minio.MakeBucketOptions{Region: "us-east-1"})
 		if err != nil {
 			return err
 		}
 	}
 
-	buf, err := ioutil.ReadAll(data)
+	buf, err := io.ReadAll(data)
 	if err != nil {
 		return err
 	}
@@ -81,7 +103,7 @@ func (a *Client) Store(ctx context.Context, filename string, data io.Reader, siz
 		size = int64(rd.Len())
 	}
 
-	_, err = a.cli.PutObjectWithContext(ctx, bucket, objName, rd, size, minio.PutObjectOptions{
+	_, err = a.cli.PutObject(ctx, bucket, objName, rd, size, minio.PutObjectOptions{
 		ContentType: http.DetectContentType(buf),
 		NumThreads:  2,
 	})
@@ -113,7 +135,7 @@ func (a *Client) Get(ctx context.Context, filename string) (*minio.Object, error
 		return nil, err
 	}
 
-	return a.cli.GetObjectWithContext(ctx, bucketName, objectName, minio.GetObjectOptions{})
+	return a.cli.GetObject(ctx, bucketName, objectName, minio.GetObjectOptions{})
 }
 
 // Stat 文件状态信息
@@ -123,7 +145,7 @@ func (a *Client) Stat(filename string) (minio.ObjectInfo, error) {
 		return minio.ObjectInfo{}, err
 	}
 
-	return a.cli.StatObject(bucketName, objectName, minio.StatObjectOptions{})
+	return a.cli.StatObject(context.Background(), bucketName, objectName, minio.StatObjectOptions{})
 }
 
 // GetBase64 获取文件的base64数据
@@ -134,7 +156,7 @@ func (a *Client) GetBase64(ctx context.Context, filename string) (string, error)
 	}
 	defer obj.Close()
 
-	buf, err := ioutil.ReadAll(obj)
+	buf, err := io.ReadAll(obj)
 	if err != nil {
 		return "", err
 	}
@@ -142,4 +164,3 @@ func (a *Client) GetBase64(ctx context.Context, filename string) (string, error)
 	s := base64.StdEncoding.EncodeToString(buf)
 	return s, nil
 }
-

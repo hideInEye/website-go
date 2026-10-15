@@ -1,0 +1,85 @@
+name: sunset-footprints-go
+
+services:
+  web:
+    image: ${WEB_IMAGE:-ghcr.io/hideineye/sunset-footprints-web:vite}
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://api:4000
+      MEDIA_UPSTREAM: ${MEDIA_UPSTREAM:-http://host.docker.internal:9000}
+      MEDIA_PROXY_HOST: ${MEDIA_PROXY_HOST:-host.docker.internal:9000}
+    ports:
+      - '${HTTP_BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-18080}:3000'
+    extra_hosts: ['host.docker.internal:host-gateway']
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:3000/healthz']
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    networks: [app]
+
+  api:
+    image: ${API_IMAGE:-ghcr.io/hideineye/sunset-footprints-api-go:deploy}
+    user: '${APP_UID:-1001}:${APP_GID:-1001}'
+    restart: unless-stopped
+    volumes:
+      - ./config/config.toml:/app/config/config.toml:ro
+      - ./data:/app/data
+    ports:
+      - '${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-18081}:4000'
+    extra_hosts: ['host.docker.internal:host-gateway']
+    healthcheck:
+      test: ['CMD', '/app/server', 'healthcheck', '-c', '/app/config/config.toml']
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks: [app]
+
+  migrate:
+    image: ${API_IMAGE:-ghcr.io/hideineye/sunset-footprints-api-go:deploy}
+    user: '${APP_UID:-1001}:${APP_GID:-1001}'
+    profiles: ['ops']
+    restart: 'no'
+    command: ['migrate', '-c', '/app/config/config.toml']
+    volumes:
+      - ./config/config.toml:/app/config/config.toml:ro
+    extra_hosts: ['host.docker.internal:host-gateway']
+    networks: [app]
+
+  # Optional backup clients receive credentials from the invoking shell only.
+  # They do not change API configuration or require another configuration file.
+  mysql-client:
+    image: mysql:8.4
+    profiles: ['ops']
+    entrypoint: ['/bin/sh']
+    command: ['-c', 'true']
+    environment:
+      MYSQL_HOST: ${MYSQL_HOST:-host.docker.internal}
+      MYSQL_PORT: ${MYSQL_PORT:-3336}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sunset_blog}
+      MYSQL_USER: ${MYSQL_USER:-}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
+    extra_hosts: ['host.docker.internal:host-gateway']
+    networks: [app]
+
+  minio-client:
+    image: quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    profiles: ['ops']
+    entrypoint: ['/bin/sh']
+    command: ['-c', 'true']
+    environment:
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-host.docker.internal}
+      MINIO_PORT: ${MINIO_PORT:-9000}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-}
+      MINIO_BUCKET: ${MINIO_BUCKET:-sunset-media}
+    extra_hosts: ['host.docker.internal:host-gateway']
+    networks: [app]
+
+networks:
+  app:

@@ -6,18 +6,43 @@ import (
 	"go.uber.org/dig"
 )
 
-// Inject 注入bll实现
-// 使用方式：
-//   container := dig.New()
-//   Inject(container)
-//   container.Invoke(func(foo IDemo) {
-//   })
+// Inject registers business services in the template's dependency container.
 func Inject(container *dig.Container) error {
-	{
-		container.Provide(internal.NewTrans, dig.As(new(bll.ITrans)))
-		container.Provide(internal.NewDemo, dig.As(new(bll.IDemo)))
-		container.Provide(internal.NewLogin, dig.As(new(bll.ILogin)))
-		container.Provide(internal.NewUser, dig.As(new(bll.IUser)))
+	if err := container.Provide(internal.NewTrans, dig.As(new(bll.ITrans))); err != nil {
+		return err
+	}
+	if err := container.Provide(internal.NewAuth, dig.As(new(bll.IAuth))); err != nil {
+		return err
+	}
+	if err := container.Provide(internal.NewUser, dig.As(new(bll.IUser))); err != nil {
+		return err
+	}
+	if err := container.Provide(internal.NewPost, dig.As(new(bll.IPost))); err != nil {
+		return err
+	}
+	if err := container.Provide(internal.NewTaxonomy, dig.As(new(bll.ITaxonomy))); err != nil {
+		return err
+	}
+	if err := container.Provide(internal.NewComment, dig.As(new(bll.IComment))); err != nil {
+		return err
+	}
+	if err := container.Provide(internal.NewBookmark, dig.As(new(bll.IBookmark))); err != nil {
+		return err
+	}
+	if err := container.Provide(internal.NewDashboard, dig.As(new(bll.IDashboard))); err != nil {
+		return err
+	}
+	if err := container.Provide(internal.NewMedia, dig.As(new(bll.IMedia))); err != nil {
+		return err
+	}
+	if err := container.Provide(internal.NewFeed, dig.As(new(bll.IFeed))); err != nil {
+		return err
+	}
+	if err := container.Provide(internal.NewHealth, dig.As(new(bll.IHealth))); err != nil {
+		return err
+	}
+	if err := container.Provide(internal.NewMail, dig.As(new(bll.IMail))); err != nil {
+		return err
 	}
 	return nil
 }

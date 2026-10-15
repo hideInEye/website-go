@@ -38,16 +38,27 @@ func InitStore(container *dig.Container) (func(), error) {
 		}
 
 		// 注入DB
-		container.Provide(func() *gormplus.DB {
+		err = container.Provide(func() *gormplus.DB {
 			return db
 		})
+		if err != nil {
+			db.Close()
+			return nil, err
+		}
 
 		// 输入gorm.DB
-		container.Provide(func() *gorm.DB {
+		err = container.Provide(func() *gorm.DB {
 			return db.GetDB()
 		})
+		if err != nil {
+			db.Close()
+			return nil, err
+		}
 
-		igorm.Inject(container)
+		if err := igorm.Inject(container); err != nil {
+			db.Close()
+			return nil, err
+		}
 	default:
 		return nil, errors.New("unknown store")
 	}

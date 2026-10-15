@@ -24,6 +24,12 @@ func ExecTrans(ctx context.Context, transModel model.ITrans, fn TransFunc) error
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			_ = transModel.Rollback(ctx, trans)
+			panic(recovered)
+		}
+	}()
 
 	err = fn(icontext.NewTrans(ctx, trans))
 	if err != nil {
@@ -31,12 +37,4 @@ func ExecTrans(ctx context.Context, transModel model.ITrans, fn TransFunc) error
 		return err
 	}
 	return transModel.Commit(ctx, trans)
-}
-
-// CheckIsRootUser 检查是否是root用户
-func CheckIsRootUser(ctx context.Context, userIDs ...string) bool {
-	if len(userIDs) > 0 {
-		return GetRootUser().RecordID == userIDs[0]
-	}
-	return GetRootUser().RecordID == GetUserID(ctx)
 }

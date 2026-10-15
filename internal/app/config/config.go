@@ -16,6 +16,9 @@ func LoadGlobalConfig(fpath string) error {
 	if err != nil {
 		return err
 	}
+	if err := c.Validate(); err != nil {
+		return err
+	}
 	global = c
 	return nil
 }
@@ -35,11 +38,13 @@ func ParseConfig(fpath string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	c.setDefaults()
 	return &c, nil
 }
 
 // Redis redis配置参数
 type Redis struct {
+	Enable   bool   `toml:"enable"`
 	Addr     string `toml:"addr"`
 	Password string `toml:"password"`
 	DB       int    `toml:"db"`
@@ -74,6 +79,9 @@ type Config struct {
 	Flow            Flow        `toml:"flow"`
 	Push            Push        `toml:"push"`
 	Auth            Auth        `toml:"auth"`
+	Site            Site        `toml:"site"`
+	Mail            Mail        `toml:"mail"`
+	Media           Media       `toml:"media"`
 }
 
 // Check 检查桶是否存在
@@ -116,21 +124,24 @@ type Root struct {
 
 // JWTAuth 用户认证
 type JWTAuth struct {
-	SigningMethod string `toml:"signing_method"`
-	SigningKey    string `toml:"signing_key"`
-	Expired       int    `toml:"expired"`
-	Store         string `toml:"store"`
-	FilePath      string `toml:"file_path"`
-	RedisDB       int    `toml:"redis_db"`
-	RedisPrefix   string `toml:"redis_prefix"`
-	ThridKey      string `toml:"third_key"`
+	RefreshTTLDays int    `toml:"refresh_ttl_days"`
+	CookieSecure   bool   `toml:"cookie_secure"`
+	SigningMethod  string `toml:"signing_method"`
+	SigningKey     string `toml:"signing_key"`
+	Expired        int    `toml:"expired"`
+	Store          string `toml:"store"`
+	FilePath       string `toml:"file_path"`
+	RedisDB        int    `toml:"redis_db"`
+	RedisPrefix    string `toml:"redis_prefix"`
+	ThridKey       string `toml:"third_key"`
 }
 
 // HTTP http配置参数
 type HTTP struct {
-	Host            string `toml:"host"`
-	Port            int    `toml:"port"`
-	ShutdownTimeout int    `toml:"shutdown_timeout"`
+	TrustedProxies  []string `toml:"trusted_proxies"`
+	Host            string   `toml:"host"`
+	Port            int      `toml:"port"`
+	ShutdownTimeout int      `toml:"shutdown_timeout"`
 }
 
 // Monitor 监控配置参数
@@ -232,9 +243,34 @@ type FileUploadBuckets []string
 
 // Minio minio配置参数
 type Minio struct {
-	Addr      string `toml:"addr"`
-	AssessKey string `toml:"assess_key"`
-	SecretKey string `toml:"secret_key"`
+	Bucket           string `toml:"bucket"`
+	UseSSL           bool   `toml:"use_ssl"`
+	RequestTimeoutMS int    `toml:"request_timeout_ms"`
+	Addr             string `toml:"addr"`
+	AssessKey        string `toml:"assess_key"`
+	SecretKey        string `toml:"secret_key"`
+}
+
+// Site 站点地址与 HTTP 部署配置。
+type Site struct {
+	Origin            string `toml:"origin"`
+	AllowInsecureHTTP bool   `toml:"allow_insecure_http"`
+}
+
+// Mail 注册验证与密码重置邮件配置。
+type Mail struct {
+	Mode     string `toml:"mode"`
+	Host     string `toml:"host"`
+	Port     int    `toml:"port"`
+	User     string `toml:"user"`
+	Password string `toml:"password"`
+	From     string `toml:"from"`
+}
+
+// Media 浏览器访问媒体所使用的公开代理地址。
+type Media struct {
+	PublicURL       string `toml:"public_url"`
+	UploadPublicURL string `toml:"upload_public_url"`
 }
 
 // AMap 高德地图配置参数
@@ -274,7 +310,7 @@ type ExportPDF struct {
 }
 
 type Push struct {
-	Addr string `toml:addr`
+	Addr string `toml:"addr"`
 }
 
 // Auth 认证中心配置参数

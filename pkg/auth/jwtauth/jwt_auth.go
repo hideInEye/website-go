@@ -70,7 +70,8 @@ func New(store Storer, opts ...Option) *JWTAuth {
 	}
 
 	return &JWTAuth{
-		opts: &o,
+		opts:  &o,
+		store: store,
 	}
 }
 

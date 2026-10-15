@@ -3,14 +3,20 @@ package main
 import (
 	"context"
 	"flag"
-	"go-gin/pkg/logger"
-	"go-gin/until"
+	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
-	"sync/atomic"
+	"strconv"
 	"syscall"
+	"time"
 
 	"go-gin/internal/app"
+	"go-gin/internal/app/config"
+	store "go-gin/internal/app/model/impl/gorm"
+	"go-gin/pkg/logger"
+	"go-gin/until"
 )
 
 var VERSION = "4.0.0"
@@ -23,39 +29,95 @@ var (
 )
 
 func init() {
-	flag.StringVar(&configFile, "c", "config/config.toml", "配置文件(.json,.yaml,.toml)")
+	flag.StringVar(&configFile, "c", "config/config.toml", "TOML 配置文件")
 	flag.StringVar(&modelFile, "m", "", "Casbin的访问控制模型(.conf)")
 	flag.StringVar(&wwwDir, "www", "", "静态站点目录")
 	flag.StringVar(&swaggerDir, "swagger", "", "swagger目录")
 }
 
 func main() {
-
-	flag.Parse()
-	if configFile == "" {
-		panic("请使用-c指定配置文件")
+	command := "serve"
+	args := os.Args[1:]
+	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
+		command = args[0]
+		args = args[1:]
 	}
-	var state int32 = 1
-	sc := make(chan os.Signal)
-	signal.Notify(sc, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	if err := flag.CommandLine.Parse(args); err != nil {
+		failCommand(err)
+	}
+	if configFile == "" {
+		failCommand(fmt.Errorf("请使用 -c 指定 TOML 配置文件"))
+	}
+	switch command {
+	case "migrate":
+		cfg, err := config.ParseConfig(configFile)
+		if err != nil {
+			failCommand(err)
+		}
+		if err := cfg.ValidateDatabase(); err != nil {
+			failCommand(err)
+		}
+		if err := store.Migrate(*cfg); err != nil {
+			failCommand(err)
+		}
+		return
+	case "healthcheck":
+		cfg, err := config.ParseConfig(configFile)
+		if err != nil {
+			failCommand(err)
+		}
+		if err := healthcheck(cfg); err != nil {
+			failCommand(err)
+		}
+		return
+	case "serve":
+	default:
+		failCommand(fmt.Errorf("unknown command: %s", command))
+	}
+
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	defer signal.Stop(signals)
+
 	ctx := logger.NewTraceIDContext(context.Background(), until.MustUUID())
 	span := logger.StartSpanWithCall(ctx)
-	call := app.Init(ctx,
+	cleanup := app.Init(ctx,
 		app.SetConfigFile(configFile),
 		app.SetModelFile(modelFile),
 		app.SetSwaggerDir(swaggerDir),
 		app.SetWWWDir(wwwDir),
-		app.SetVersion(VERSION))
-	select {
-	case sig := <-sc:
-		atomic.StoreInt32(&state, 0)
-		span().Printf("获取到退出信号[%s]", sig.String())
-	}
-
-	if call != nil {
-		call()
+		app.SetVersion(VERSION),
+	)
+	signal := <-signals
+	span().Printf("获取到退出信号[%s]", signal.String())
+	if cleanup != nil {
+		cleanup()
 	}
 	span().Printf("服务退出")
+}
 
-	os.Exit(int(atomic.LoadInt32(&state)))
+func healthcheck(cfg *config.Config) error {
+	host := cfg.HTTP.Host
+	switch host {
+	case "", "0.0.0.0":
+		host = "127.0.0.1"
+	case "::":
+		host = "::1"
+	}
+	address := net.JoinHostPort(host, strconv.Itoa(cfg.HTTP.Port))
+	client := &http.Client{Timeout: 5 * time.Second}
+	response, err := client.Get("http://" + address + "/api/v1/health/live")
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("healthcheck returned HTTP %d", response.StatusCode)
+	}
+	return nil
+}
+
+func failCommand(err error) {
+	fmt.Fprintln(os.Stderr, err)
+	os.Exit(1)
 }

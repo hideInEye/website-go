@@ -22,3 +22,7 @@
 services/server
 /vendor
 config.dev.toml
+.env
+.env.*
+/backups/
+/bin/

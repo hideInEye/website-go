@@ -2,8 +2,11 @@ package ginplus
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/go-sql-driver/mysql"
+	"github.com/jinzhu/gorm"
 	"net/http"
 	"strings"
 
@@ -33,7 +36,7 @@ const (
 
 // NewContext 封装上线文入口
 func NewContext(c *gin.Context) context.Context {
-	parent := context.Background()
+	parent := c.Request.Context()
 
 	traceId := GetTraceID(c)
 
@@ -123,7 +126,7 @@ func SetUserID(c *gin.Context, userID string) {
 // ParseJSON 解析请求JSON
 func ParseJSON(c *gin.Context, obj interface{}) error {
 	if err := c.ShouldBindJSON(obj); err != nil {
-		logger.Warnf(NewContext(c), err.Error())
+		logger.Warnf(NewContext(c), "%v", err)
 		return errors.ErrInvalidRequestParameter
 	}
 	return nil
@@ -173,17 +176,22 @@ func ResJSON(c *gin.Context, status int, v interface{}) {
 
 // ResError 响应错误
 func ResError(c *gin.Context, err error, status ...int) {
-	statusCode := 500
-	errItem := schema.HTTPErrorItem{
-		Code:    500,
-		Message: "发生未知错误，请联系管理员",
-		TraceID: GetTraceID(c),
-	}
-
-	if errCode, ok := errors.FromErrorCode(err); ok {
-		errItem.Code = errCode.Code
-		errItem.Message = errCode.Message
+	statusCode := http.StatusInternalServerError
+	message := "数据操作失败"
+	var publicError *errors.HTTPError
+	var mysqlError *mysql.MySQLError
+	if stderrors.As(err, &publicError) {
+		statusCode = publicError.Status
+		message = publicError.Message
+	} else if gorm.IsRecordNotFoundError(err) {
+		statusCode = http.StatusNotFound
+		message = "记录不存在"
+	} else if stderrors.As(err, &mysqlError) && (mysqlError.Number == 1062 || mysqlError.Number == 1451 || mysqlError.Number == 1452) {
+		statusCode = http.StatusConflict
+		message = "数据重复或仍被其他记录使用"
+	} else if errCode, ok := errors.FromErrorCode(err); ok {
 		statusCode = errCode.HTTPStatusCode
+		message = errCode.Message
 	}
 
 	if len(status) > 0 {
@@ -193,8 +201,41 @@ func ResError(c *gin.Context, err error, status ...int) {
 	if statusCode == 500 && err != nil {
 		span := logger.StartSpan(NewContext(c))
 		span = span.WithField("stack", fmt.Sprintf("%+v", err))
-		span.Errorf(err.Error())
+		span.Errorf("%v", err)
 	}
 
-	ResJSON(c, statusCode, schema.HTTPError{Error: errItem})
+	Fail(c, statusCode, message)
+}
+
+// ResData preserves the API response envelope consumed by the existing frontend.
+func ResData(c *gin.Context, status int, data interface{}) {
+	ResJSON(c, status, schema.Object{"data": data})
+}
+
+func Fail(c *gin.Context, status int, message string) {
+	ResJSON(c, status, schema.Object{
+		"statusCode": status,
+		"code":       fmt.Sprintf("HTTP_%d", status),
+		"message":    message,
+		"traceId":    GetTraceID(c),
+	})
+}
+
+func Bind(c *gin.Context, value interface{}) bool {
+	if err := c.ShouldBindJSON(value); err != nil {
+		Fail(c, http.StatusBadRequest, "请求参数格式或内容不正确")
+		return false
+	}
+	return true
+}
+
+func SetCurrentUser(c *gin.Context, user *schema.User) {
+	c.Set(prefix+"/current_user", user)
+	SetUserID(c, user.ID)
+}
+
+func CurrentUser(c *gin.Context) *schema.User {
+	value, _ := c.Get(prefix + "/current_user")
+	user, _ := value.(*schema.User)
+	return user
 }

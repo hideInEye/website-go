@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"fmt"
 
 	"go-gin/internal/app/errors"
 	"go-gin/pkg/gormplus"
@@ -21,7 +20,6 @@ type Trans struct {
 // Begin 开启事务
 func (a *Trans) Begin(ctx context.Context) (interface{}, error) {
 	result := a.db.Begin()
-	fmt.Println(result)
 	if err := result.Error; err != nil {
 		return nil, errors.WithStack(err)
 	}
